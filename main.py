@@ -48,7 +48,7 @@ class ProgressBar:
         self.prefix = prefix
         self.length = length
         self.fill = fill
-        self.animation = animation or ['- ', '\\ ', '| ', '/ ']
+        self.animation = animation or ['-', '\\', '|', '/']
         self.current = 0
 
     def update(self, progress):
@@ -116,49 +116,160 @@ def analyze_frequencies(schedule):
     else:
         print("     None")
 
-def fix_adjacent_repetition_week_based(schedule):
+def fix_adjacent_repetition(schedule, max_iterations=20):
+    #print(schedule)
     """
-    Adjusts the schedule to avoid adjacent repetitions in Bible and Reading assignments,
-    ensuring no repetition within the same day and resolving conflicts week-wise.
+    Attempts to eliminate adjacent repetitions across the schedule using multiple passes.
+    This version attempts broader swaps for both same-day and next-day conflicts
+    by looking at any day in the schedule that has the same weekday code.
     """
-    days = sorted(schedule.keys())  # Ordered list of days for easy indexing
 
-    # Iterate through each time slot (3 per day)
-    for slot in range(3):
-        for day_idx, day in enumerate(days):
-            if day_idx == 0:  # Skip the first day (no previous week to check)
-                continue
+    # Sort the day keys so we have a consistent, ordered list of days
+    days = sorted(schedule.keys())
 
-            # Get current and previous week's assignments
-            curr_bible, curr_reading = schedule[day][slot]
-            prev_day = days[day_idx - 7] if day_idx >= 7 else None
+    # ----------------------------------------------------
+    # Helper function to determine weekday code for a day.
+    # Customize this to fit how you label days (e.g., numeric dates, single-letter codes, etc.).
+    # For single-letter keys ('m', 't', 'w', etc.), you might just return the first character.
+    # ----------------------------------------------------
+    def get_weekday_code(day_key):
+        """
+        Return a code identifying the weekday for the given day_key.
 
-            # Check repetition within the same slot across weeks
-            if prev_day:
-                prev_bible, prev_reading = schedule[prev_day][slot]
+        If day_key is a string such as 'm2l', extract the first character.
+        If day_key is an integer representing a date, compute its weekday code
+        (e.g., Monday=0, Tuesday=1, etc.) based on your calendar logic.
+        """
+        # If day_key is a string, extract the first character
+        if isinstance(day_key, str):
+            return day_key[0]
 
-                # If Bible names match, swap with previous week
-                if curr_bible == prev_bible:
-                    schedule[day][slot], schedule[prev_day][slot] = schedule[prev_day][slot], schedule[day][slot]
-                    curr_bible, curr_reading = schedule[day][slot]  # Update after swapping
+        # If day_key is an integer, compute the weekday code via a lookup or function
+        elif isinstance(day_key, int):
+            # Convert day_key to the weekday number (Monday=0 ... Sunday=6)
+            weekday_num = calendar.weekday(year, month, day_key)
+            return weekday_num
 
-                # If Reading names match, swap with previous week
-                if curr_reading == prev_reading:
-                    schedule[day][slot], schedule[prev_day][slot] = schedule[prev_day][slot], schedule[day][slot]
+        # Fallback if needed
+        return day_key
 
-            # Check for conflicts within the same day (e.g., same Bible/Reading name in any time slot)
-            for other_slot in range(3):
-                if other_slot == slot:
-                    continue
+    # -------------------------------------------------------------------------
+    # Build a map from each weekday code to a list of day indexes that share it.
+    # -------------------------------------------------------------------------
+    weekday_to_indexes = {}
+    for idx, day_key in enumerate(days):
+        wday_code = get_weekday_code(day_key)
+        weekday_to_indexes.setdefault(wday_code, []).append(idx)
 
-                other_bible, other_reading = schedule[day][other_slot]
+    # -------------------------------------------------------------------------
+    # Conflict resolution functions
+    # -------------------------------------------------------------------------
+    def resolve_same_day_conflicts(schedule, day_idx):
+        """
+        Attempt to fix conflicts within the same day (e.g., repeated names for different slots).
+        Swaps the conflicting slot with a matching weekday day if needed.
+        Returns True if at least one swap was made.
+        """
+        changed = False
+        day_key = days[day_idx]
 
-                # Ensure Bible and Reading names are not repeated in the same day
-                if curr_bible == other_bible or curr_reading == other_reading:
-                    # Swap with the same slot in the next/previous week
-                    next_day = days[day_idx + 7] if day_idx + 7 < len(days) else None
-                    if next_day:
-                        schedule[day][slot], schedule[next_day][slot] = schedule[next_day][slot], schedule[day][slot]
+        # Identify all indexes that share this weekday code
+        wday_code = get_weekday_code(day_key)
+        same_wday_indexes = weekday_to_indexes[wday_code]
+
+        used_bible = set()
+        used_reading = set()
+
+        for slot in range(len(schedule[day_key])):
+            bible, reading = schedule[day_key][slot]
+            if bible in used_bible or reading in used_reading:
+                # We have a conflict in this slot, so look for a swap candidate
+                for alt_idx in same_wday_indexes:
+                    if alt_idx == day_idx:
+                        continue  # skip the same exact day
+                    alt_day_key = days[alt_idx]
+
+                    # Swap the current slot with the alt_day slot
+                    schedule[day_key][slot], schedule[alt_day_key][slot] = (
+                        schedule[alt_day_key][slot],
+                        schedule[day_key][slot],
+                    )
+                    changed = True
+
+                    # After swapping, re-check if the conflict is resolved
+                    bible, reading = schedule[day_key][slot]
+                    if bible not in used_bible and reading not in used_reading:
+                        break  # conflict resolved for this slot, move on
+
+            # Update sets with the chosen (possibly swapped) names
+            used_bible.add(bible)
+            used_reading.add(reading)
+
+        return changed
+
+    def resolve_next_day_conflicts(schedule, day_idx):
+        """
+        Attempt to fix conflicts between consecutive days (e.g., if day_idx and day_idx+1
+        have the same person assigned in the same slot).
+        This function broadens its search to any day that shares the same weekday code
+        for the 'next_day' side when a conflict arises.
+        Returns True if at least one swap was made.
+        """
+        changed = False
+        if day_idx + 1 >= len(days):
+            return changed
+
+        day_key = days[day_idx]
+        next_day_key = days[day_idx + 1]
+
+        # Identify all indexes in the schedule that share next_day_key’s weekday code
+        next_day_code = get_weekday_code(next_day_key)
+        same_wday_indexes_next_day = weekday_to_indexes[next_day_code]
+
+        for slot in range(len(schedule[day_key])):
+            curr_bible, curr_reading = schedule[day_key][slot]
+            next_bible, next_reading = schedule[next_day_key][slot]
+
+            if curr_bible == next_bible or curr_reading == next_reading:
+                # Look for a possible swap in any day that has the same weekday code as next_day_key
+                for alt_day_idx in same_wday_indexes_next_day:
+                    if alt_day_idx == day_idx + 1:
+                        continue  # skip the exact same next_day
+                    alt_day_key = days[alt_day_idx]
+
+                    # Swap next_day’s slot with alt_day’s slot
+                    schedule[next_day_key][slot], schedule[alt_day_key][slot] = (
+                        schedule[alt_day_key][slot],
+                        schedule[next_day_key][slot],
+                    )
+                    changed = True
+
+                    # Check if conflict is now resolved
+                    new_next_bible, new_next_reading = schedule[next_day_key][slot]
+                    if curr_bible != new_next_bible and curr_reading != new_next_reading:
+                        # If the conflict is resolved for this slot, no further swap needed
+                        break
+
+        return changed
+
+    # -------------------------------------------------------------------------
+    # Multi-pass approach: repeat until no more changes or max_iterations reached
+    # -------------------------------------------------------------------------
+    for _ in range(max_iterations):
+        #print(_)
+        has_changed = False
+
+        for day_idx in range(len(days)):
+            # Step 1: Resolve conflicts within the same day
+            if resolve_same_day_conflicts(schedule, day_idx):
+                has_changed = True
+
+            # Step 2: Resolve conflicts between consecutive days
+            if resolve_next_day_conflicts(schedule, day_idx):
+                has_changed = True
+
+        if not has_changed:
+            break  # No swaps made in this pass, so schedule is as conflict-free as possible
 
     return schedule
 
@@ -180,7 +291,7 @@ def organize_schedule():
         del l2[0]
         del l3[0]
 
-    return fix_adjacent_repetition_week_based(schedule)
+    return fix_adjacent_repetition(schedule)
 
 
 def csv_writer(schedule):
@@ -267,6 +378,7 @@ def main():
             #print(f"{var_name} {var_value}")
 
     schedule = organize_schedule()
+    #print(schedule)
     analyze_frequencies(schedule)
     csv_writer(schedule)
 
