@@ -12,26 +12,49 @@ CREATE TABLE ABA (
                      DEFAULT (100),
     R    INTEGER     NOT NULL
                      DEFAULT (100),
-    m1   INTEGER (1) DEFAULT 0,
-    m2   INTEGER (1) DEFAULT 0,
-    m3   INTEGER (1) DEFAULT 0,
-    t1   INTEGER (1) DEFAULT 0,
-    t2   INTEGER (1) DEFAULT 0,
-    t3   INTEGER (1) DEFAULT 0,
-    w1   INTEGER (1) DEFAULT 0,
-    w2   INTEGER (1) DEFAULT 0,
-    w3   INTEGER (1) DEFAULT 0,
-    h1   INTEGER (1) DEFAULT 0,
-    h2   INTEGER (1) DEFAULT 0,
-    h3   INTEGER (1) DEFAULT 0,
-    f1   INTEGER (1) DEFAULT 0,
-    f2   INTEGER (1) DEFAULT 0,
-    f3   INTEGER (1) DEFAULT 0,
-    s1   INTEGER (1) DEFAULT 0,
-    s2   INTEGER (1) DEFAULT 0,
-    s3   INTEGER (1) DEFAULT 0,
-    u1   INTEGER (1) DEFAULT 0,
-    u2   INTEGER (1) DEFAULT 0,
+    I    INTEGER     NOT NULL
+                     DEFAULT (100),
+    m1   INTEGER (1) DEFAULT 0
+                     NOT NULL,
+    m2   INTEGER (1) DEFAULT 0
+                     NOT NULL,
+    m3   INTEGER (1) DEFAULT 0
+                     NOT NULL,
+    t1   INTEGER (1) DEFAULT 0
+                     NOT NULL,
+    t2   INTEGER (1) DEFAULT 0
+                     NOT NULL,
+    t3   INTEGER (1) DEFAULT 0
+                     NOT NULL,
+    w1   INTEGER (1) DEFAULT 0
+                     NOT NULL,
+    w2   INTEGER (1) DEFAULT 0
+                     NOT NULL,
+    w3   INTEGER (1) DEFAULT 0
+                     NOT NULL,
+    h1   INTEGER (1) DEFAULT 0
+                     NOT NULL,
+    h2   INTEGER (1) DEFAULT 0
+                     NOT NULL,
+    h3   INTEGER (1) DEFAULT 0
+                     NOT NULL,
+    f1   INTEGER (1) DEFAULT 0
+                     NOT NULL,
+    f2   INTEGER (1) DEFAULT 0
+                     NOT NULL,
+    f3   INTEGER (1) DEFAULT 0
+                     NOT NULL,
+    s1   INTEGER (1) DEFAULT 0
+                     NOT NULL,
+    s2   INTEGER (1) DEFAULT 0
+                     NOT NULL,
+    s3   INTEGER (1) DEFAULT 0
+                     NOT NULL,
+    u1   INTEGER (1) DEFAULT 0
+                     NOT NULL,
+    u2   INTEGER (1) DEFAULT 0
+                     NOT NULL,
     u3   INTEGER (1) DEFAULT 0
+                     NOT NULL
 );
 ```
