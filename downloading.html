@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_blank">
+    <script>
+      (function() {
+        const rawUrl = <?!= JSON.stringify(exportUrl) ?>;
+        const safeUrl = encodeURI(rawUrl);
+        window.open(safeUrl, "_blank");
+        google.script.host.close();
+      })();
+    </script>
+  </head>
+  <body>
+    <!-- Nothing needs to be visible -->
+  </body>
+</html>
