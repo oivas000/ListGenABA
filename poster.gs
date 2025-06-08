@@ -193,7 +193,7 @@ function generateSlidesFromSheets() {
   Logger.log('ℹ️ Placeholder slides count: ' + N);
 
   // ⑫ Loop through each day
-  for (var dayIndex = 1; dayIndex <= M; dayIndex++) {
+  for (var dayIndex = 1; dayIndex < M; dayIndex++) {
     var sheetRow = DATA_START_ROW + dayIndex - 1;
 
     // Read data for each token

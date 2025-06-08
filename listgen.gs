@@ -29,16 +29,28 @@ let m1l, m2l, m3l,
     u1l, u2l, u3l;
 let COLUMNS_ORDERED;
 
+/**
+ * Runs when the spreadsheet is opened. Adds custom menus.
+ */
 function onOpen() {
-  SpreadsheetApp.getUi()
-    .createMenu('ABA')
-    .addItem('Generate Lists', 'runGenerate')
-    .addItem('Generate Slides', 'generateSlidesFromSheets')
-    .addItem('Download', 'Downloader')
-    .addItem('Reset', 'runReset')
+  const ui = SpreadsheetApp.getUi();
+
+  const subMenu = ui
+    .createMenu('Utilities')
+    .addItem('Sorting and Numbering', 'sortByColumnBAndReNumber');
+
+  ui.createMenu('ABA')
+    .addItem('Generate Lists',        'runGenerate')
+    .addItem('Generate Slides',       'generateSlidesFromSheets')
+    .addItem('Download',              'Downloader')
+    .addItem('Reset',                 'runReset')
+    .addSubMenu(subMenu)
     .addToUi();
 }
 
+/**
+ * Prompts for month/year and triggers schedule generation.
+ */
 function runGenerate() {
   const ui = SpreadsheetApp.getUi();
   const resp = ui.prompt(
@@ -69,6 +81,9 @@ function runGenerate() {
   }
 }
 
+/**
+ * Resets all non-zero B/R/I weights back to 100.
+ */
 function runReset() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const ui = SpreadsheetApp.getUi();
@@ -84,32 +99,52 @@ function runReset() {
   );
   if (resp !== ui.Button.YES) return;
 
-  const data = aba.getDataRange().getValues();
-  for (let r = 1; r < data.length; r++) {
-    const wB = data[r][COL_INDEX.B];
-    const wR = data[r][COL_INDEX.R];
-    const wI = data[r][COL_INDEX.I];
-    const sheetRow = r + 1;
-    if (wB !== 0) aba.getRange(sheetRow, COL_INDEX.B + 1).setValue(100);
-    if (wR !== 0) aba.getRange(sheetRow, COL_INDEX.R + 1).setValue(100);
-    if (wI !== 0) aba.getRange(sheetRow, COL_INDEX.I + 1).setValue(100);
+  // Load all data into memory
+  const numCols = aba.getLastColumn();
+  const numRows = aba.getLastRow();
+  const data = aba.getRange(1, 1, numRows, numCols).getValues();
+
+  // Adjust weights in the in-memory array
+  for (let r = 1; r < numRows; r++) {
+    const bVal = data[r][COL_INDEX.B];
+    if (bVal !== 0 && bVal !== '' && bVal != null) data[r][COL_INDEX.B] = 100;
+
+    const rVal = data[r][COL_INDEX.R];
+    if (rVal !== 0 && rVal !== '' && rVal != null) data[r][COL_INDEX.R] = 100;
+
+    const iVal = data[r][COL_INDEX.I];
+    if (iVal !== 0 && iVal !== '' && iVal != null) data[r][COL_INDEX.I] = 100;
   }
+
+  // Write back the entire sheet in bulk
+  aba.getRange(1, 1, numRows, numCols).setValues(data);
+
   ui.alert('Weights reset.');
 }
 
+/**
+ * Core scheduling logic using in-memory data and bulk writes.
+ */
 function generateSchedule(month, year) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const aba = ss.getSheetByName('ABA');
   if (!aba) throw new Error('Sheet "ABA" not found.');
 
-  const data = aba.getDataRange().getValues();
+  // Loads ABA Sheet Data Range
+  const numCols = aba.getLastColumn();
+  const numRows = aba.getLastRow();
+  const data = aba.getRange(1, 1, numRows, numCols).getValues();
+
+  // Build map from member ID → row index
   const noToRow = {};
-  for (let r = 0; r < data.length; r++) {
+  for (let r = 0; r < numRows; r++) {
     noToRow[data[r][COL_INDEX.No]] = r;
   }
 
+  // Build month structures
   const { monthCal, monthInfo, monthDict } = buildMonthStructures(year, month);
 
+  // Prepare ordered column names
   COLUMNS_ORDERED = [];
   for (const w of WEEK_NAMES) {
     for (let n = 1; n <= 3; n++) {
@@ -117,11 +152,12 @@ function generateSchedule(month, year) {
     }
   }
 
+  // Count how many TRUE flags per column in memory
   const columnCounts = [];
   for (const colName of COLUMNS_ORDERED) {
     const idx = COL_INDEX[colName];
     let cnt = 0;
-    for (let r = 0; r < data.length; r++) {
+    for (let r = 0; r < numRows; r++) {
       if (data[r][idx] === true) cnt++;
     }
     columnCounts.push({ col: colName, count: cnt });
@@ -129,6 +165,7 @@ function generateSchedule(month, year) {
   columnCounts.sort((a, b) => a.count - b.count);
   const leastMems = columnCounts.map(obj => obj.col);
 
+  // Initialize assignment lists
   m1l = []; m2l = []; m3l = [];
   t1l = []; t2l = []; t3l = [];
   w1l = []; w2l = []; w3l = [];
@@ -146,41 +183,56 @@ function generateSchedule(month, year) {
     u1: u1l, u2: u2l, u3: u3l
   };
 
+  // Perform random selection and weight updates in memory
   for (const dt of leastMems) {
     const d = dt.charAt(0);
     const t = parseInt(dt.charAt(1), 10);
     const colIdx = COL_INDEX[dt];
     const tupleMemsIds = [];
-    for (let r = 0; r < data.length; r++) {
+    for (let r = 0; r < numRows; r++) {
       if (data[r][colIdx] === true) {
         tupleMemsIds.push(data[r][COL_INDEX.No]);
       }
     }
     const times = weekCount(monthInfo, d);
     for (let i = 0; i < times; i++) {
-      randomSelector(tupleMemsIds, d, t, aba, data, noToRow);
+      randomSelector(tupleMemsIds, d, t, data, noToRow);
     }
   }
 
+  // Shuffle each list in memory
   Object.values(listsByName).forEach(lst => lst.sort(() => Math.random() - 0.5));
 
+  // Build schedule and analyze frequencies
   const schedule = organizeSchedule(monthDict, listsByName, data, noToRow);
-
   analyzeFrequencies(schedule, data, noToRow);
 
+  // Create CSV sheets
   writeCsvSheets(schedule, month, year);
 
-  for (let r = 1; r < data.length; r++) {
-    const sheetRow = r + 1;
-    const wB = aba.getRange(sheetRow, COL_INDEX.B + 1).getValue();
-    const wR = aba.getRange(sheetRow, COL_INDEX.R + 1).getValue();
-    const wI = aba.getRange(sheetRow, COL_INDEX.I + 1).getValue();
-    if (wB !== 0) aba.getRange(sheetRow, COL_INDEX.B + 1).setValue(wB + 20);
-    if (wR !== 0) aba.getRange(sheetRow, COL_INDEX.R + 1).setValue(wR + 20);
-    if (wI !== 0) aba.getRange(sheetRow, COL_INDEX.I + 1).setValue(wI + 20);
+  // Final weight increment step in memory
+  for (let r = 1; r < numRows; r++) {
+    const bVal = data[r][COL_INDEX.B];
+    if (bVal !== 0 && bVal !== '' && bVal != null) {
+      data[r][COL_INDEX.B] = bVal + 20;
+    }
+    const rVal = data[r][COL_INDEX.R];
+    if (rVal !== 0 && rVal !== '' && rVal != null) {
+      data[r][COL_INDEX.R] = rVal + 20;
+    }
+    const iVal = data[r][COL_INDEX.I];
+    if (iVal !== 0 && iVal !== '' && iVal != null) {
+      data[r][COL_INDEX.I] = iVal + 20;
+    }
   }
+
+  // Write all changes back to the sheet in bulk
+  aba.getRange(1, 1, numRows, numCols).setValues(data);
 }
 
+/**
+ * Builds calendar structures for the month.
+ */
 function buildMonthStructures(year, month) {
   const lastDay = new Date(year, month, 0).getDate();
   const monthCal = [];
@@ -208,6 +260,9 @@ function buildMonthStructures(year, month) {
   return { monthCal, monthInfo, monthDict };
 }
 
+/**
+ * Counts how many times a weekday letter appears.
+ */
 function weekCount(monthInfo, weekLetter) {
   let cnt = 0;
   for (const wk of monthInfo) {
@@ -218,42 +273,26 @@ function weekCount(monthInfo, weekLetter) {
   return cnt;
 }
 
-function getWeight(col, memId, abaSheet, data, noToRow) {
-  const rowIdx = noToRow[memId];
-  const sheetRow = rowIdx + 1;
-  return abaSheet.getRange(sheetRow, COL_INDEX[col] + 1).getValue();
-}
-
-function setWeight(col, memId, deltaWeight, abaSheet, noToRow) {
-  const rowIdx = noToRow[memId];
-  const sheetRow = rowIdx + 1;
-  const cell = abaSheet.getRange(sheetRow, COL_INDEX[col] + 1);
-  const current = cell.getValue();
-  cell.setValue(current + deltaWeight);
-}
-
-function weightedChoice(items, weights) {
-  const total = weights.reduce((sum, w) => sum + w, 0);
-  if (total === 0) {
-    return items[Math.floor(Math.random() * items.length)];
-  }
-  let r = Math.random() * total;
-  let cursor = 0;
-  for (let i = 0; i < items.length; i++) {
-    cursor += weights[i];
-    if (cursor >= r) return items[i];
-  }
-  return items[items.length - 1];
-}
-
-function randomSelector(tupleMemsIds, d, t, abaSheet, data, noToRow) {
-  const B_db_weights = tupleMemsIds.map(id => getWeight('B', id, abaSheet, data, noToRow));
-  const R_db_weights = tupleMemsIds.map(id => getWeight('R', id, abaSheet, data, noToRow));
-  const I_db_weights = tupleMemsIds.map(id => getWeight('I', id, abaSheet, data, noToRow));
+/**
+ * Picks the highest-weighted items for B/R/I and updates weights in memory.
+ */
+function randomSelector(tupleMemsIds, d, t, data, noToRow) {
+  const B_db_weights = tupleMemsIds.map(id => {
+    const rowIdx = noToRow[id];
+    return data[rowIdx][COL_INDEX.B];
+  });
+  const R_db_weights = tupleMemsIds.map(id => {
+    const rowIdx = noToRow[id];
+    return data[rowIdx][COL_INDEX.R];
+  });
+  const I_db_weights = tupleMemsIds.map(id => {
+    const rowIdx = noToRow[id];
+    return data[rowIdx][COL_INDEX.I];
+  });
 
   const B_max = Math.max(...B_db_weights);
   const B_weightsMasked = B_db_weights.map(w => (w === B_max ? w : 0));
-  let b = weightedChoice(tupleMemsIds, B_weightsMasked);
+  let b = weightedChoice(tupleMemsIds, B_weightsMasked, data, noToRow);
 
   let r;
   {
@@ -261,7 +300,7 @@ function randomSelector(tupleMemsIds, d, t, abaSheet, data, noToRow) {
     while (true) {
       const R_max = Math.max(...attemptWeights);
       const R_weightsMasked = attemptWeights.map(w => (w === R_max ? w : 0));
-      r = weightedChoice(tupleMemsIds, R_weightsMasked);
+      r = weightedChoice(tupleMemsIds, R_weightsMasked, data, noToRow);
       if (r !== b) break;
       const idxR = tupleMemsIds.indexOf(r);
       attemptWeights[idxR] -= 10;
@@ -274,7 +313,7 @@ function randomSelector(tupleMemsIds, d, t, abaSheet, data, noToRow) {
     while (true) {
       const I_max = Math.max(...attemptWeights);
       const I_weightsMasked = attemptWeights.map(w => (w === I_max ? w : 0));
-      i = weightedChoice(tupleMemsIds, I_weightsMasked);
+      i = weightedChoice(tupleMemsIds, I_weightsMasked, data, noToRow);
       if (i !== b && i !== r) break;
       const idxI = tupleMemsIds.indexOf(i);
       attemptWeights[idxI] -= 10;
@@ -308,17 +347,43 @@ function randomSelector(tupleMemsIds, d, t, abaSheet, data, noToRow) {
       throw new Error('Unknown list: ' + varName);
   }
 
-  setWeight('B', b, -10, abaSheet, noToRow);
-  setWeight('R', b, -5, abaSheet, noToRow);
-  setWeight('R', r, -10, abaSheet, noToRow);
-  setWeight('B', r, -5, abaSheet, noToRow);
+  // Update weights in memory
+  const rowB = noToRow[b];
+  data[rowB][COL_INDEX.B] += -10;
+  data[rowB][COL_INDEX.R] += -5;
+
+  const rowR = noToRow[r];
+  data[rowR][COL_INDEX.R] += -10;
+  data[rowR][COL_INDEX.B] += -5;
+
   if (t !== 1) {
-    setWeight('I', i, -10, abaSheet, noToRow);
+    const rowI = noToRow[i];
+    data[rowI][COL_INDEX.I] += -10;
   }
 
   return [b, r, i];
 }
 
+/**
+ * Picks one item from `items[]` based on corresponding `weights[]`.
+ */
+function weightedChoice(items, weights) {
+  const total = weights.reduce((sum, w) => sum + w, 0);
+  if (total === 0) {
+    return items[Math.floor(Math.random() * items.length)];
+  }
+  let r = Math.random() * total;
+  let cursor = 0;
+  for (let i = 0; i < items.length; i++) {
+    cursor += weights[i];
+    if (cursor >= r) return items[i];
+  }
+  return items[items.length - 1];
+}
+
+/**
+ * Builds the schedule in memory and fixes conflicts.
+ */
 function organizeSchedule(monthDict, listsByName, data, noToRow) {
   const schedule = {};
   const days = Object.keys(monthDict).map(d => parseInt(d, 10)).sort((a, b) => a - b);
@@ -339,10 +404,16 @@ function organizeSchedule(monthDict, listsByName, data, noToRow) {
   return fixSchedule(schedule);
 }
 
+/**
+ * Retrieves the NAME field from memory.
+ */
 function getRealName(memId, data, noToRow) {
   return data[noToRow[memId]][COL_INDEX.NAME];
 }
 
+/**
+ * Resolves adjacent-day conflicts in the schedule.
+ */
 function fixSchedule(schedule) {
   const numericSchedule = {};
   for (const [k, v] of Object.entries(schedule)) {
@@ -413,6 +484,9 @@ function fixSchedule(schedule) {
   return newSchedule;
 }
 
+/**
+ * Analyzes assignment frequencies and logs results.
+ */
 function analyzeFrequencies(schedule, data, noToRow) {
   const bNames = [];
   const rNames = [];
@@ -435,7 +509,10 @@ function analyzeFrequencies(schedule, data, noToRow) {
   const bCounter = buildCounter(bNames);
   const rCounter = buildCounter(rNames);
   const iCounter = buildCounter(iNames);
-  const allNames = data.map(row => row[COL_INDEX.NAME]);
+  const allNames = data
+    .slice(1)
+    .map(row => row[COL_INDEX.NAME])
+    .filter(n => n != null && n.toString().trim() !== '');
   const missingFast = ctr => allNames.filter(n => !(n in ctr));
   const missingInB = missingFast(bCounter);
   const missingInR = missingFast(rCounter);
@@ -474,10 +551,16 @@ function analyzeFrequencies(schedule, data, noToRow) {
     : Logger.log('  None');
 }
 
+/**
+ * Returns full month name from month number.
+ */
 function monthName(month) {
   return new Date(2020, month - 1, 1).toLocaleString('default', { month: 'long' });
 }
 
+/**
+ * Creates three schedule sheets and populates them with assignment data.
+ */
 function writeCsvSheets(schedule, month, year) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const mName = monthName(month).toUpperCase();
@@ -525,9 +608,9 @@ function writeCsvSheets(schedule, month, year) {
 
   if (numRows > 0) {
     brSheet.getRange(3, 1, numRows, 4).setValues(brValues);
-    brSheet.getRange(numRows + 4, 1, 1, 4).setValues([footerRow]);
+    brSheet.getRange(numRows + 3, 1, 1, 4).setValues([footerRow]);
     rSheet.getRange(3, 1, numRows, 4).setValues(rValues);
-    rSheet.getRange(numRows + 4, 1, 1, 4).setValues([footerRow]);
+    rSheet.getRange(numRows + 3, 1, 1, 4).setValues([footerRow]);
     iSheet.getRange(3, 1, numRows, 4).setValues(iValues);
   }
 
@@ -535,6 +618,6 @@ function writeCsvSheets(schedule, month, year) {
   copyFormatOnly(numRows.toString(), rSheetName);
   copyFormatOnly(numRows.toString(), iSheetName);
   iSheet.deleteColumn(2);
-  iSheet.getRange(numRows + 4, 1, 1, 3).setValues([['', 'p : PRESENT              a : ABSENT', '          c : CHANGED']]);
+  iSheet.getRange(numRows + 3, 1, 1, 3).setValues([['', 'p : PRESENT              a : ABSENT', '          c : CHANGED']]);
   iSheet.setColumnWidths(2, 2, 300);
 }

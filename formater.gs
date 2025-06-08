@@ -5,7 +5,8 @@
  * into a target sheet in the active spreadsheet. Does this by:
  *  1. Copying the source sheet into the destination as a temp sheet.
  *  2. Copying formats from the temp sheet to the real target sheet.
- *  3. Deleting the temp sheet.
+ *  3. Using the Advanced Sheets service to batch‐apply column widths and row heights.
+ *  4. Deleting the temp sheet.
  *
  * @param {string} sourceSheetName – Name of the sheet in the source spreadsheet.
  * @param {string} targetSheetName – Name of the sheet in the active spreadsheet.
@@ -56,16 +57,57 @@ function copyFormatOnly(sourceSheetName, targetSheetName) {
   var destRange = destSheet.getRange(1, 1, numRows, numCols);
   tempRange.copyTo(destRange, { formatOnly: true });
 
-  // 8) Copy column widths
-  for (var col = 1; col <= numCols; col++) {
-    var width = tempCopiedSheet.getColumnWidth(col);
-    destSheet.setColumnWidth(col, width);
+  // 8) Use Advanced Sheets service to batch‐apply column widths and row heights
+  var spreadsheetId = destSS.getId();
+  //var sourceSid = tempCopiedSheet.getSheetId();
+  var destSid   = destSheet.getSheetId();
+
+  // Gather column widths from temp sheet
+  var colWidths = [];
+  for (var c = 1; c <= numCols; c++) {
+    colWidths.push(tempCopiedSheet.getColumnWidth(c));
   }
-  // Copy row heights
-  for (var row = 1; row <= numRows; row++) {
-    var height = tempCopiedSheet.getRowHeight(row);
-    destSheet.setRowHeight(row, height);
+  // Gather row heights from temp sheet
+  var rowHeights = [];
+  for (var r = 1; r <= numRows; r++) {
+    rowHeights.push(tempCopiedSheet.getRowHeight(r));
   }
+
+  // Build batchUpdate requests
+  var requests = [];
+  //   a) Column width requests
+  colWidths.forEach(function(width, index) {
+    requests.push({
+      updateDimensionProperties: {
+        range: {
+          sheetId: destSid,
+          dimension: 'COLUMNS',
+          startIndex: index,
+          endIndex: index + 1
+        },
+        properties: { pixelSize: width },
+        fields: 'pixelSize'
+      }
+    });
+  });
+  //   b) Row height requests
+  rowHeights.forEach(function(height, index) {
+    requests.push({
+      updateDimensionProperties: {
+        range: {
+          sheetId: destSid,
+          dimension: 'ROWS',
+          startIndex: index,
+          endIndex: index + 1
+        },
+        properties: { pixelSize: height },
+        fields: 'pixelSize'
+      }
+    });
+  });
+
+  // Execute batchUpdate in one call
+  Sheets.Spreadsheets.batchUpdate({ requests: requests }, spreadsheetId);
 
   // 9) Delete the temporary sheet
   destSS.deleteSheet(tempCopiedSheet);
