@@ -48,6 +48,7 @@ This repository contains three main scripts:
   - **Generate Slides**  
   - **Download**  
   - **Reset**
+  - **Utilities**
 
 - **Generate Lists**  
   1. Click **ABA → Generate Lists**.  
@@ -67,6 +68,9 @@ This repository contains three main scripts:
 - **Reset**  
   1. Click **ABA → Reset**.  
   2. All non-zero B/R/I weights return to 100, preserving zeros.
+
+- **Utilities [SubMenus]**
+  1. **Sorting and Numbering** - Sort the NAME column in ascending order and add serial numbers in the first column.
 
 ## Configuration
 
