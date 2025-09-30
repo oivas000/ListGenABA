@@ -73,6 +73,7 @@ function runGenerate() {
   }
 
   try {
+    checkAtLeastThreeTrues();
     generateSchedule(month, year);
     ui.alert(`✅ Finished!\nSchedule generated for ${monthName(month)} ${year}.\nCheck the new sheets.\nCreated by @oivas000.`);
   } catch (e) {
@@ -349,16 +350,26 @@ function randomSelector(tupleMemsIds, d, t, data, noToRow) {
 
   // Update weights in memory
   const rowB = noToRow[b];
-  data[rowB][COL_INDEX.B] += -10;
-  data[rowB][COL_INDEX.R] += -5;
+  if (data[rowB][COL_INDEX.B] !== 0) {
+    data[rowB][COL_INDEX.B] += -10;
+  }
+  if (data[rowB][COL_INDEX.R] !== 0) {
+    data[rowB][COL_INDEX.R] += -5;
+  }
 
   const rowR = noToRow[r];
-  data[rowR][COL_INDEX.R] += -10;
-  data[rowR][COL_INDEX.B] += -5;
+  if (data[rowR][COL_INDEX.R] !== 0) {
+    data[rowR][COL_INDEX.R] += -10;
+  }
+  if (data[rowR][COL_INDEX.B] !== 0) {
+    data[rowR][COL_INDEX.B] += -5;
+  }
 
   if (t !== 1) {
     const rowI = noToRow[i];
-    data[rowI][COL_INDEX.I] += -10;
+    if (data[rowI][COL_INDEX.I] !== 0) {
+      data[rowI][COL_INDEX.I] += -10;
+    }
   }
 
   return [b, r, i];

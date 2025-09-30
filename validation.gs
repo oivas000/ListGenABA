@@ -88,3 +88,37 @@ function sortByColumnBAndReNumber() {
   }
   sheet.getRange(2, 1, numRows, 1).setValues(serials);
 }
+
+function checkAtLeastThreeTrues() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("ABA");
+  
+  // Get last row and all values from F to Z (row 2 onwards)
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    throw new Error("No data found below header row.");
+  }
+  
+  const range = sheet.getRange(2, 6, lastRow - 1, 21); // cols F (6) → Z (26)
+  const values = range.getValues();
+  
+  // Loop through columns F → Z
+  for (let col = 0; col < values[0].length; col++) {
+    let trueCount = 0;
+    for (let row = 0; row < values.length; row++) {
+      if (values[row][col] === true) {
+        trueCount++;
+      }
+    }
+    
+    // If less than 3 TRUEs, raise error with column name
+    const headers = sheet.getRange(1, 6, 1, 21).getValues()[0]; // Row 1, cols F → Z
+
+    if (trueCount < 3) {
+      const colName = headers[col]; // get the first row value of this column
+      throw new Error("Column " + colName + " must contain at least 3 members!");
+    }
+
+  }
+  
+}
